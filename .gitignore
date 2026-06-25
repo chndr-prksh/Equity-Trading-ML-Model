@@ -1,0 +1,37 @@
+# Environment
+.env
+
+# Data files (large / proprietary exchange data)
+base_data_*.csv
+recomendations_*.csv
+day_by_day_2022/
+day_by_day_2023/
+
+# Trade state (personal portfolio data)
+open_trades.json
+closed_trades.json
+tracker_2022.json
+tracker_2023.json
+
+# Trained models (binary blobs)
+models/*.pkl
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Conda / virtualenv
+.conda/
+env/
+venv/
