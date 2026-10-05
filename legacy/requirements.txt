@@ -1,0 +1,10 @@
+mysql-connector-python
+pandas
+SQLAlchemy
+tqdm
+joblib
+scikit-learn
+jupyter
+pandas_ta
+xgboost==1.6.1
+python-dotenv
