@@ -1,8 +1,6 @@
-<p><img src="site/logo.svg" width="56" alt="Ledgerline logo"></p>
+<p align="center"><a href="https://chndr-prksh.github.io/ledgerline/"><img src="site/social.png" alt="Ledgerline: stock signals, on the record" width="820"></a></p>
 
 # Ledgerline
-
-*Stock signals, on the record.*
 
 Daily, rule-based **buy / hold / exit / sell** signals for every liquid stock on the US exchanges and
 India's NSE, published as a static website and updated by GitHub Actions. No server, no API keys, no
