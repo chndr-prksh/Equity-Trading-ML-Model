@@ -8,7 +8,12 @@ Daily, rule-based **buy / hold / exit / sell** signals for every liquid stock on
 India's NSE, published as a static website and updated by GitHub Actions. No server, no API keys, no
 paid data.
 
-**Live site: https://chndr-prksh.github.io/Equity-Trading-ML-Model/**
+**Live site: https://chndr-prksh.github.io/ledgerline/**
+
+[![Daily signals](https://github.com/chndr-prksh/ledgerline/actions/workflows/daily.yml/badge.svg)](https://github.com/chndr-prksh/ledgerline/actions/workflows/daily.yml)
+[![CI](https://github.com/chndr-prksh/ledgerline/actions/workflows/ci.yml/badge.svg)](https://github.com/chndr-prksh/ledgerline/actions/workflows/ci.yml)
+
+Built with Python (pandas, NumPy, PyArrow), vanilla JavaScript and Canvas, GitHub Actions and GitHub Pages.
 
 ![Ledgerline: today's signals](docs/screenshot.jpg)
 

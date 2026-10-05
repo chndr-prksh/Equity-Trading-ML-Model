@@ -81,14 +81,15 @@ def load_nse(market, cache, limit=None):
     return uni, bars, bench, info
 
 
-def audit_nse(info, symbols, bars):
+def audit_nse(info, symbols, panel):
     """Cross-check our split/bonus factors for `symbols` against NSE's MCP server. Never fatal."""
     if not symbols or info.get("price_source") != "NSE daily bhavcopy archive":
         return
     try:
-        first = bars[bars["symbol"].isin(symbols)].groupby("symbol")["date"].min().dt.date.astype(str).to_dict()
+        # only history the engine actually uses: the panel drops bars before a long trading hole
+        first = {s: panel.C[s].first_valid_index().date().isoformat() for s in symbols}
         issues, checked = nse_mcp.audit_adjustments(
-            info["adjustments"], symbols, bars["date"].min().date(), bars["date"].max().date(), first)
+            info["adjustments"], symbols, panel.dates[0].date(), panel.dates[-1].date(), first)
         info["audit"] = {"checked": checked, "issues": issues}
         if issues:
             log.warning("NSE MCP audit: %d adjustment disagreements, e.g. %s", len(issues), issues[:3])

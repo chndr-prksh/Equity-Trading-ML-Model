@@ -27,7 +27,7 @@ def run_market(key, out, ledger_dir, cache, limit=None):
         rank = {"BUY": 0, "EXIT": 1, "HOLD": 2}
         active = sorted((s for s, sig in zip(panel.symbols, signal) if sig in rank),
                         key=lambda s: rank[signal[panel.symbols.index(s)]])
-        data.audit_nse(info, active, bars)
+        data.audit_nse(info, active, panel)
     rows, launch = ledger.update(res, f"{ledger_dir}/{key}.csv")
     summary = publish.build(res, uni, info, rows, launch, out)
     c = summary["counts"]
