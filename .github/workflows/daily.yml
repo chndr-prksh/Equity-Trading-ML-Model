@@ -1,0 +1,91 @@
+name: Daily signals
+
+on:
+  schedule:
+    - cron: "30 13 * * 1-5"   # 19:00 IST, after NSE publishes the day's files
+    - cron: "30 22 * * 1-5"   # 17:30/18:30 New York, after the US close
+  workflow_dispatch:
+
+permissions:
+  contents: write    # push the signal log to the `ledger` branch
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily-signals
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out the signal log
+        run: |
+          if git ls-remote --exit-code --heads origin ledger >/dev/null; then
+            git fetch --depth 1 origin ledger
+            git worktree add ledger-branch FETCH_HEAD
+            git -C ledger-branch checkout -B ledger
+          else
+            git worktree add --detach ledger-branch
+            git -C ledger-branch checkout --orphan ledger
+            git -C ledger-branch rm -rfq .
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      # .cache = NSE price store (so a run downloads one file, not five years);
+      # public/data = yesterday's output, kept if a market's source is down today.
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            .cache
+            public/data
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      - name: Compute signals
+        id: signals
+        continue-on-error: true
+        run: python -m tracker.run --market nse --market us --out public --ledger ledger-branch/ledger
+
+      - name: Commit the signal log
+        run: |
+          cd ledger-branch
+          git add -A ledger
+          if ! git diff --cached --quiet; then
+            git -c user.name="ledgerline[bot]" -c user.email="ledgerline@users.noreply.github.com" \
+              commit -qm "Signals for $(date -u +%F)"
+            git push origin ledger
+          fi
+
+      - name: Assemble site
+        run: |
+          test -d public/data || { echo "no data to publish"; exit 1; }
+          cp site/* public/
+
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache
+            public/data
+          key: state-${{ github.run_id }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Fail if a market did not update
+        if: steps.signals.outcome == 'failure'
+        run: exit 1
