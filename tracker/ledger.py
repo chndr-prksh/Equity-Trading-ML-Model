@@ -51,18 +51,23 @@ def events_for(res, d):
 
 
 def update(res, path, now=None):
-    """Append events for every session after the last logged one. Returns (all rows, launch date)."""
+    """Append events not yet logged. Returns (all rows, launch date)."""
     path = Path(path)
     rows = read(path)
     dates = res.panel.dates
     last = len(dates) - 1
     if rows:
-        watermark = max(r["date"] for r in rows)
-        todo = [d for d in range(max(0, last - 30), last + 1) if dates[d].strftime("%Y-%m-%d") > watermark]
+        # Every session since launch within the last month, so a run that missed a day or had
+        # incomplete data is healed by the next one. Existing lines are never touched; a late
+        # line is recognisable by its logged_at.
+        launch = min(r["date"] for r in rows)
+        todo = [d for d in range(max(0, last - 21), last + 1) if dates[d].strftime("%Y-%m-%d") >= launch]
     else:
         todo = [last]
+    seen = {(r["date"], r["symbol"], r["event"]) for r in rows}
     stamp = (now or dt.datetime.now(dt.timezone.utc)).strftime("%Y-%m-%dT%H:%MZ")
-    new = [dict(e, logged_at=stamp) for d in todo for e in events_for(res, d)]
+    new = [dict(e, logged_at=stamp) for d in todo for e in events_for(res, d)
+           if (e["date"], e["symbol"], e["event"]) not in seen]
     if new or not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         fresh = not path.exists() or path.stat().st_size == 0
