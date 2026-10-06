@@ -46,7 +46,7 @@ def history_one(ysym, years=5):
     for i, host in enumerate(HOSTS):
         url = f"https://{host}/v8/finance/chart/{quote(ysym)}?range={years}y&interval=1d&events=split"
         try:
-            r = http.get(url, timeout=20, retries=2, ok404=True)
+            r = http.get(url, timeout=20, retries=1, ok404=True)
         except requests.RequestException:
             if i == len(HOSTS) - 1:
                 raise
@@ -96,27 +96,32 @@ def benchmark(ysym, years=5):
 
 
 def market_caps(symbols, market, batch=150):
-    """{symbol: market cap} from the batch quote endpoint. Best effort: returns what it can get."""
-    s = http.session()
+    """{symbol: market cap} from the batch quote endpoint. Best effort: returns what it can get.
+
+    Uses its own session: the quote endpoint needs a cookie, and Yahoo throttles the chart
+    endpoint hard once requests carry that cookie.
+    """
+    s = requests.Session()
+    s.headers.update({"User-Agent": http.UA, "Accept": "*/*"})
     try:
         s.get("https://fc.yahoo.com", timeout=10)          # sets the cookie the crumb is tied to
     except requests.RequestException:
         pass
     crumb = None
     for host in HOSTS:
-        try:
-            crumb = http.get(f"https://{host}/v1/test/getcrumb", timeout=10, retries=2).text
+        r = s.get(f"https://{host}/v1/test/getcrumb", timeout=10)
+        if r.ok and r.text:
+            crumb = r.text
             break
-        except requests.RequestException as e:
-            err = e
     if not crumb:
-        raise err
+        raise RuntimeError(f"no crumb from Yahoo ({r.status_code})")
     back = {to_yahoo(sym, market): sym for sym in symbols}
     names, out = list(back), {}
     for i in range(0, len(names), batch):
         try:
-            r = http.get(f"https://{HOSTS[0]}/v7/finance/quote", timeout=20, retries=1,
-                         params={"symbols": ",".join(names[i:i + batch]), "crumb": crumb, "fields": "marketCap"})
+            r = s.get(f"https://{HOSTS[0]}/v7/finance/quote", timeout=20,
+                      params={"symbols": ",".join(names[i:i + batch]), "crumb": crumb, "fields": "marketCap"})
+            r.raise_for_status()
             for q in r.json()["quoteResponse"]["result"]:
                 if q.get("marketCap"):
                     out[back[q["symbol"]]] = float(q["marketCap"])

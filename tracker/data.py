@@ -32,8 +32,8 @@ def load_us(market, cache, limit=None):
     uni = nasdaq.universe()
     if limit:
         uni = uni.sort_values("mcap", ascending=False).head(limit)
-    # Nasdaq leaves market cap blank for closed-end funds and some share classes.
-    # Done before the bulk price download: Yahoo refuses new crumbs right after a burst.
+    # Nasdaq leaves market cap blank for closed-end funds and some share classes. Asked first
+    # (Yahoo refuses new crumbs right after a burst) and on a separate session (see market_caps).
     blank = uni.loc[~(uni["mcap"] > 0), "symbol"].tolist()
     if blank:
         try:
@@ -45,8 +45,9 @@ def load_us(market, cache, limit=None):
     symbols = uni["symbol"].tolist()
     bars, missing = yahoo.history(symbols, "us", market.history_years)
     source = "Yahoo Finance"
-    if len(missing) > 0.3 * len(symbols):
-        log.warning("yahoo missing %d of %d US symbols; falling back to Nasdaq", len(missing), len(symbols))
+    # A handful of symbols are simply not on Yahoo; more than that means it refused some requests.
+    if len(missing) > 25:
+        log.warning("yahoo missing %d of %d US symbols; fetching those from Nasdaq", len(missing), len(symbols))
         more, missing = nasdaq.history(missing, market.history_years)
         bars = pd.concat([bars, more], ignore_index=True)
         source = "Yahoo Finance + Nasdaq"
