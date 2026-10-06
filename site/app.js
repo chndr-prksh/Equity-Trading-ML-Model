@@ -47,6 +47,10 @@
   const pctEl = (v, d) => h("span", { class: v > 0 ? "up" : v < 0 ? "down" : "" }, pct(v, d));
   function compact(v, sym) {
     if (v == null) return "–";
+    if (sym === "₹") {   // Indian convention: crore (1e7) and lakh crore (1e12)
+      const cr = v / 1e7;
+      return cr >= 1e5 ? "₹" + (cr / 1e5).toFixed(2) + "L Cr" : "₹" + cr.toLocaleString("en-IN", { maximumFractionDigits: cr >= 100 ? 0 : 1 }) + " Cr";
+    }
     const units = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "K"]];
     for (const [n, u] of units) if (Math.abs(v) >= n) return sym + (v / n).toFixed(v / n >= 100 ? 0 : 1) + u;
     return sym + v.toFixed(0);
@@ -101,6 +105,7 @@
       { label: "Close", num: 1, cell: (r) => num(r[I.close]) },
       { label: "Day", num: 1, cell: (r) => pctEl(r[I.chg]) },
       ...extra,
+      { label: "Mkt cap", num: 1, cell: (r) => compact(r[I.mcap], cur) },
     ];
     const section = (title, sig, note, extra, sortCol) => {
       const rows = pick(sig, sortCol, 12), total = c[sig];
@@ -139,7 +144,7 @@
         h("div", { class: "card" }, h("h2", {}, "Sectors"), h("p", { class: "muted small" }, "Median of rated stocks in each group, strongest relative strength first."),
           table([
             { label: "Sector", cell: (s) => h("a", { href: link(market, "screener") + "?sector=" + encodeURIComponent(s.name) }, s.name) },
-            { label: "Stocks", num: 1, cell: (s) => s.n }, { label: "Median RS", num: 1, cell: (s) => s.rs ?? "–" },
+            { label: "Stocks", num: 1, cell: (s) => s.n }, { label: "Total mkt cap", num: 1, cell: (s) => (s.mcap ? compact(s.mcap, cur) : "–") }, { label: "Median RS", num: 1, cell: (s) => s.rs ?? "–" },
             { label: "Day", num: 1, cell: (s) => pctEl(s.chg) }, { label: "1 month", num: 1, cell: (s) => pctEl(s.ret_1m) },
             { label: "3 months", num: 1, cell: (s) => pctEl(s.ret_3m) }, { label: "Above 50-day", num: 1, cell: (s) => s.above50 + "%" },
             { label: "Leaders", num: 1, cell: (s) => s.leaders },
@@ -158,21 +163,33 @@
     "New 52-week highs": (r, I) => r[I.rated] && r[I.from_high] != null && r[I.from_high] >= -0.005,
     "Volume surge": (r, I) => r[I.rated] && r[I.vol_x] >= 2 && r[I.chg] > 0,
   };
-  const filt = { q: "", signal: "", sector: "", preset: "", rs: 0, rated: true, sort: "score", dir: -1, page: 0 };
+  const filt = { q: "", signal: "", sector: "", preset: "", size: "", rs: 0, rated: true, sort: "score", dir: -1, page: 0 };
+  // US: the usual dollar bands. NSE: SEBI's rank bands (top 100 large, next 150 mid, rest small).
+  function sizeOf(market, scr) {
+    const I = scr.index;
+    if (!scr.size) {
+      scr.size = new Map();
+      const ranked = scr.rows.filter((r) => r[I.mcap] > 0).sort((a, b) => b[I.mcap] - a[I.mcap]);
+      ranked.forEach((r, i) => scr.size.set(r[0], market === "nse" ? (i < 100 ? "Large" : i < 250 ? "Mid" : "Small")
+        : r[I.mcap] >= 1e10 ? "Large" : r[I.mcap] >= 2e9 ? "Mid" : "Small"));
+    }
+    return scr.size;
+  }
   async function screenerView(market, _arg, query) {
     const scr = await screener(market), sum = await load(market, "summary");
     const I = scr.index;
-    if (query.has("signal") || query.has("sector")) Object.assign(filt, { signal: query.get("signal") || "", sector: query.get("sector") || "", preset: "", q: "", rs: 0, page: 0 });
+    if (query.has("signal") || query.has("sector")) Object.assign(filt, { signal: query.get("signal") || "", sector: query.get("sector") || "", preset: "", size: "", q: "", rs: 0, page: 0 });
     const sectors = [...new Set(scr.rows.map((r) => r[I.sector]))].sort();
+    const size = sizeOf(market, scr);
     const body = h("div", {});
     const COLS = [
       ["symbol", "Stock"], ["name", "Name"], ["signal", "Signal"], ["close", "Close", 1], ["chg", "Day", 1], ["score", "Score", 1], ["rs", "RS", 1],
-      ["tt", "Trend", 1], ["from_high", "From high", 1], ["ret_1m", "1 mo", 1], ["ret_3m", "3 mo", 1], ["vol_x", "Vol ×", 1], ["traded", "Traded/day", 1], ["sector", "Sector"],
+      ["tt", "Trend", 1], ["from_high", "From high", 1], ["ret_1m", "1 mo", 1], ["ret_3m", "3 mo", 1], ["vol_x", "Vol ×", 1], ["mcap", "Mkt cap", 1], ["traded", "Traded/day", 1], ["sector", "Sector"],
     ];
     function render() {
       const q = filt.q.trim().toUpperCase();
       let rows = scr.rows.filter((r) =>
-        (!filt.rated || r[I.rated] || q) && (!filt.signal || r[I.signal] === filt.signal) && (!filt.sector || r[I.sector] === filt.sector) &&
+        (!filt.rated || r[I.rated] || q) && (!filt.size || size.get(r[0]) === filt.size) && (!filt.signal || r[I.signal] === filt.signal) && (!filt.sector || r[I.sector] === filt.sector) &&
         (!filt.rs || (r[I.rs] ?? 0) >= filt.rs) && (!filt.preset || PRESETS[filt.preset](r, I)) &&
         (!q || r[I.symbol].startsWith(q) || r[I.name].toUpperCase().includes(q)));
       const k = I[filt.sort];
@@ -191,7 +208,7 @@
         if (["chg", "from_high", "ret_1m", "ret_3m"].includes(c)) return pctEl(v);
         if (c === "tt") return v == null ? "–" : v + "/8";
         if (c === "vol_x") return v == null ? "–" : v.toFixed(1);
-        if (c === "traded") return compact(v, sum.market.symbol);
+        if (c === "traded" || c === "mcap") return compact(v, sum.market.symbol);
         return v ?? "–";
       };
       body.replaceChildren(
@@ -220,6 +237,8 @@
               Object.keys(SIGNALS).map((s) => h("option", { value: s, selected: filt.signal === s }, s === "NR" ? "Not rated" : s))),
             h("select", { onchange: (e) => set({ sector: e.target.value }) }, h("option", { value: "" }, "All sectors"),
               sectors.map((s) => h("option", { value: s, selected: filt.sector === s }, s))),
+            h("select", { title: market === "nse" ? "By market-cap rank: top 100, next 150, the rest" : "Large $10B+, mid $2–10B, small under $2B", onchange: (e) => set({ size: e.target.value }) },
+              h("option", { value: "" }, "Any size"), ["Large", "Mid", "Small"].map((v) => h("option", { value: v, selected: filt.size === v }, v + " cap"))),
             h("select", { onchange: (e) => set({ rs: +e.target.value }) }, [0, 70, 80, 90].map((v) => h("option", { value: v, selected: filt.rs === v }, v ? "RS " + v + "+" : "Any RS"))),
             h("label", { class: "small" }, h("input", { type: "checkbox", checked: filt.rated, onchange: (e) => set({ rated: e.target.checked }) }), " Rated stocks only")),
           body));
@@ -250,7 +269,7 @@
     const info = h("div", { class: "muted small", id: "bar-info" });
     const page = [
       staleWarning(sum),
-      h("div", { class: "head" }, h("h1", {}, sym), h("span", { class: "muted" }, row[I.name] + " · " + row[I.sector]),
+      h("div", { class: "head" }, h("h1", {}, sym), h("span", { class: "muted" }, row[I.name] + " · " + row[I.sector] + (row[I.mcap] ? " · " + compact(row[I.mcap], cur) + " market cap" : "")),
         h("span", { class: "px" }, cur + num(row[I.close])), pctEl(row[I.chg], 2), sigEl(sig),
         h("button", { class: "btn" + (inList ? "" : " primary"), onclick: () => {
           const next = inList ? list.filter((x) => !(x.m === market && x.s === sym)) : [...list, { m: market, s: sym, px: null, qty: null }];
@@ -269,7 +288,8 @@
           h("div", { class: "card" }, h("h2", {}, "Levels"), h("dl", { class: "kv" },
             [["Breakout level (50-day high)", det.levels.pivot], ["Stop for this trade", sig === "HOLD" || sig === "BUY" ? row[I.stop] : null], ["50-day average", det.sma50.at(-1)],
               ["200-day average", det.sma200.at(-1)], ["52-week high", det.levels.hi52], ["52-week low", det.levels.lo52], ["Average daily range (ATR)", det.levels.atr]]
-              .filter(([, v]) => v != null).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, cur + num(v))])))),
+              .filter(([, v]) => v != null).flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, cur + num(v))]),
+            row[I.mcap] ? [h("dt", {}, "Market cap"), h("dd", {}, compact(row[I.mcap], cur))] : null, [h("dt", {}, "Traded per day"), h("dd", {}, compact(row[I.traded], cur))]))),
         h("div", { class: "card", style: "margin-top:14px" }, h("h2", {}, "System trades in this stock"),
           det.trades.length ? table([
             { label: "Setup", cell: (t) => t.setup }, { label: "Signal", cell: (t) => t.signal }, { label: "Entry", num: 1, cell: (t) => num(t.entry_px) },
@@ -322,6 +342,7 @@
           { label: "Day", num: 1, cell: ({ r, I }) => (r ? pctEl(r[I.chg]) : "–") },
           { label: "Trend", cell: ({ r, I }) => (r ? r[I.trend] || "–" : "–") },
           { label: "RS", num: 1, cell: ({ r, I }) => (r ? r[I.rs] ?? "–" : "–") },
+          { label: "Mkt cap", num: 1, cell: ({ r, I, cur }) => (r ? compact(r[I.mcap], cur) : "–") },
           { label: "System stop", num: 1, cell: ({ r, I, cur }) => (r && r[I.stop] != null ? cur + num(r[I.stop]) : "–") },
           { label: "Your price", num: 1, cell: ({ x }) => h("input", { type: "number", step: "any", min: "0", style: "width:92px", value: x.px ?? "", placeholder: "optional",
             onchange: (e) => { x.px = e.target.value ? +e.target.value : null; save(list); } }) },

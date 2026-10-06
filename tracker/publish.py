@@ -180,11 +180,13 @@ def build(res, uni, info, ledger_rows, launch, out_dir):
             "leaders": [int(x) for x in ((A["tt_count"][-n:] == 8) & e).sum(1)],
         }
     sec = pd.DataFrame({"sector": [meta.get(s, {}).get("sector", "Unclassified") for s in p.symbols],
+                        "mcap": pd.to_numeric([meta.get(s, {}).get("mcap") for s in p.symbols], errors="coerce"),
                         "chg": chg, "r1m": r1m, "r3m": r3m, "rs": A["rs"][last],
                         "above50": C[last] > A["sma50"][last], "lead": A["tt_count"][last] == 8})[elig]
     sectors = [{"name": name, "n": int(len(g)), "chg": _clean(g.chg.median(), 4), "ret_1m": _clean(g.r1m.median(), 4),
                 "ret_3m": _clean(g.r3m.median(), 4), "rs": _clean(g.rs.median(), 0),
-                "above50": _clean(100 * g.above50.mean(), 0), "leaders": int(g.lead.sum())}
+                "above50": _clean(100 * g.above50.mean(), 0), "leaders": int(g.lead.sum()),
+                "mcap": _clean(g.mcap.sum(), 0)}
                for name, g in sec.groupby("sector") if len(g) >= 3]
     sectors.sort(key=lambda s: -(s["rs"] or 0))
     b = res.bench
