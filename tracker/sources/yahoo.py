@@ -116,15 +116,19 @@ def market_caps(symbols, market, batch=150):
     if not crumb:
         raise RuntimeError(f"no crumb from Yahoo ({r.status_code})")
     back = {to_yahoo(sym, market): sym for sym in symbols}
-    names, out = list(back), {}
-    for i in range(0, len(names), batch):
-        try:
-            r = s.get(f"https://{HOSTS[0]}/v7/finance/quote", timeout=20,
-                      params={"symbols": ",".join(names[i:i + batch]), "crumb": crumb, "fields": "marketCap"})
-            r.raise_for_status()
-            for q in r.json()["quoteResponse"]["result"]:
-                if q.get("marketCap"):
-                    out[back[q["symbol"]]] = float(q["marketCap"])
-        except Exception as e:
-            log.warning("yahoo market caps: batch %d failed: %s", i // batch, e)
+    out = {}
+    # Large batches sometimes come back with rows silently dropped, so ask again, in smaller
+    # batches, for whatever is still missing.
+    for size in (batch, 40, 40):
+        names = [y for y, sym in back.items() if sym not in out]
+        for i in range(0, len(names), size):
+            try:
+                r = s.get(f"https://{HOSTS[0]}/v7/finance/quote", timeout=20,
+                          params={"symbols": ",".join(names[i:i + size]), "crumb": crumb, "fields": "marketCap"})
+                r.raise_for_status()
+                for q in r.json()["quoteResponse"]["result"]:
+                    if q.get("marketCap") and q["symbol"] in back:
+                        out[back[q["symbol"]]] = float(q["marketCap"])
+            except Exception as e:
+                log.warning("yahoo market caps: batch of %d failed: %s", size, e)
     return out
