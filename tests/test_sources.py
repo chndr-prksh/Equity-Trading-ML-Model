@@ -84,3 +84,16 @@ def test_split_on_a_day_without_trading_applies_at_the_next_session():
     actions = pd.DataFrame({"symbol": ["AAA"], "ex_date": [ex], "purpose": ["FVSPLT FRM RS 10 TO RE 1"]})
     adj, applied = nse.adjust(raw, actions)
     assert adj["close"].tolist() == pytest.approx([100, 101, 102]) and applied[0]["source"] == "declared"
+
+
+def test_yahoo_history_gives_up_quickly_when_throttled(monkeypatch):
+    from tracker.sources import yahoo
+    calls = []
+
+    def refused(ysym, years=5):
+        calls.append(ysym)
+        raise RuntimeError("429")
+
+    monkeypatch.setattr(yahoo, "history_one", refused)
+    bars, missing = yahoo.history([f"S{i}" for i in range(500)], "us", workers=4)
+    assert len(missing) == 500 and bars.empty and len(calls) < 60

@@ -32,6 +32,16 @@ def load_us(market, cache, limit=None):
     uni = nasdaq.universe()
     if limit:
         uni = uni.sort_values("mcap", ascending=False).head(limit)
+    # Nasdaq leaves market cap blank for closed-end funds and some share classes.
+    # Done before the bulk price download: Yahoo refuses new crumbs right after a burst.
+    blank = uni.loc[~(uni["mcap"] > 0), "symbol"].tolist()
+    if blank:
+        try:
+            caps = yahoo.market_caps(blank, "us")
+            uni["mcap"] = uni["mcap"].where(uni["mcap"] > 0, uni["symbol"].map(caps))
+            log.info("us: filled %d of %d missing market caps from Yahoo", len(caps), len(blank))
+        except Exception as e:
+            log.warning("us: could not fill missing market caps: %s", e)
     symbols = uni["symbol"].tolist()
     bars, missing = yahoo.history(symbols, "us", market.history_years)
     source = "Yahoo Finance"

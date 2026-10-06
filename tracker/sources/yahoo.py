@@ -59,10 +59,19 @@ def history_one(ysym, years=5):
 
 def history(symbols, market, years=5, workers=8):
     """Return (long DataFrame[symbol,date,open,high,low,close,volume], list of symbols with no data)."""
+    # If Yahoo is throttling this IP, every call burns its retries. Stop asking once that is clear
+    # so the caller can move to its fallback source in seconds instead of hours.
+    tally = {"ok": 0, "err": 0}
+
     def one(sym):
+        if tally["err"] >= 25 and tally["err"] > 3 * tally["ok"]:
+            return sym, None, RuntimeError("yahoo throttled")
         try:
-            return sym, history_one(to_yahoo(sym, market), years), None
+            df = history_one(to_yahoo(sym, market), years)
+            tally["ok"] += 1
+            return sym, df, None
         except Exception as e:  # network/parse failure for one symbol must not sink the run
+            tally["err"] += 1
             return sym, None, e
 
     frames, missing, errors = [], [], 0
@@ -84,3 +93,33 @@ def benchmark(ysym, years=5):
     if df is None:
         raise RuntimeError(f"no benchmark data for {ysym}")
     return df.set_index("date")["close"]
+
+
+def market_caps(symbols, market, batch=150):
+    """{symbol: market cap} from the batch quote endpoint. Best effort: returns what it can get."""
+    s = http.session()
+    try:
+        s.get("https://fc.yahoo.com", timeout=10)          # sets the cookie the crumb is tied to
+    except requests.RequestException:
+        pass
+    crumb = None
+    for host in HOSTS:
+        try:
+            crumb = http.get(f"https://{host}/v1/test/getcrumb", timeout=10, retries=2).text
+            break
+        except requests.RequestException as e:
+            err = e
+    if not crumb:
+        raise err
+    back = {to_yahoo(sym, market): sym for sym in symbols}
+    names, out = list(back), {}
+    for i in range(0, len(names), batch):
+        try:
+            r = http.get(f"https://{HOSTS[0]}/v7/finance/quote", timeout=20, retries=1,
+                         params={"symbols": ",".join(names[i:i + batch]), "crumb": crumb, "fields": "marketCap"})
+            for q in r.json()["quoteResponse"]["result"]:
+                if q.get("marketCap"):
+                    out[back[q["symbol"]]] = float(q["marketCap"])
+        except Exception as e:
+            log.warning("yahoo market caps: batch %d failed: %s", i // batch, e)
+    return out

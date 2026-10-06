@@ -36,7 +36,7 @@ def universe():
     out = []
     for x in rows:
         sym, name = x["symbol"].strip(), x["name"].strip()
-        if "^" in sym or _NOT_COMMON.search(name) or x.get("industry") == "Blank Checks":
+        if "^" in sym or sym.endswith("/WS") or _NOT_COMMON.search(name) or x.get("industry") == "Blank Checks":
             continue
         short = re.sub(r"\s+(Common Stock|Common Shares|Ordinary Shares|Class [A-Z] .*|American Depositary .*|"
                        r"Depositary .*|Common Units.*|\(.*\)).*$", "", name).strip(" ,-")
